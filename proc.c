@@ -5,8 +5,14 @@ int shm_id;
 int sem_id;
 FILE* file_ptr;
 shm_container* shm_ptr;
+int my_pid; 
+int current_index;
+
 
 int main() {
+
+	int resources_used;
+	my_pid = getpid();
 
 	//create the shared memory
 	if (get_shm() == -1) {
@@ -20,8 +26,20 @@ int main() {
 		exit(0);
 	}
 
+
 	//main loop
 	while (1) {
+
+		//RANDOMLY CHECK FOR TERMINATION EVERY 0 - 250 MS
+		//IF TERMINATE RELEASE RESOURCES
+
+		//ONLY EARLY TERMINATE IF PROCESS HAS BEEN RUNNING FOR AT LEAST 1 SECOND OF LOGICAL CLOCK
+
+		//IF NOT TERMINATING THEN DETERMINE IF THE PROCESS IS GOING TO REQUEST OR RELEASE A RESOURCE
+
+		//DO THAT
+
+
 		break;
 	}
 
@@ -61,4 +79,37 @@ int get_sem() {
 		return -1;
 	}
 	return 0;
+}
+
+void log_string(char* s) {
+	//log the passed string to the log file
+	fputs(s, file_ptr);
+}
+
+void sem_wait(int sem_id) {
+	//used to wait and decrement semaphore
+	struct sembuf op;
+	op.sem_num = 0;
+	op.sem_op = -1;
+	op.sem_flg = 0;
+	semop(sem_id, &op, 1);
+}
+
+void sem_signal(int sem_id) {
+	//used to increment semaphore
+	struct sembuf op;
+	op.sem_num = 0;
+	op.sem_op = 1;
+	op.sem_flg = 0;
+	semop(sem_id, &op, 1);
+}
+
+void get_index(int pid) {
+	int i;
+	for (i = 0; i < MAX_PROC; i++) {
+		if (pid == shm_ptr->pids_running[i]) {
+			return i;
+		}
+	}
+	return -1;
 }
