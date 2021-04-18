@@ -103,7 +103,7 @@ int get_shm() {
 	//creates the shared memory and attaches the pointer for it (or tries to at least)
 	key_t key = ftok("Makefile", 'a');
 	//gets chared memory
-	if ((shm_id = shmget(key, (sizeof(resource_info) * MAX_PROC) + sizeof(shm_container), IPC_CREAT | 0666)) == -1) {
+	if ((shm_id = shmget(key, (sizeof(resource) * MAX_PROC) + sizeof(shm_container), IPC_CREAT | 0666)) == -1) {
 		perror("oss.c: shmget failed:");
 		return -1;
 	}
