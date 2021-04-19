@@ -85,6 +85,7 @@ int main() {
 		//INCREMENT LOGICAL CLOCK
 		nano_change = 1 + ( rand() % 10000);
 		shm_ptr->clock_nano += nano_change;
+		shm_ptr->ms += nano_change / 1000000; 
 		normalize_clock();
 		sem_signal(SEM_CLOCK_ACC);
 	
@@ -184,9 +185,11 @@ void initialize_shm() {
 		shm_ptr->wait_time[i] = 0;
 		shm_ptr->sleep_status[i] = 0;
 		shm_ptr->finished[i] = 0;
+		shm_ptr->waiting[i] = false;
 	}
 	shm_ptr->seconds = 0;
 	shm_ptr->nanoseconds = 0;
+	shm_ptr->ms = 0;
 }
 
 void find_and_remove(int pid) {

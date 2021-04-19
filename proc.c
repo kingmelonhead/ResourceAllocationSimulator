@@ -9,6 +9,10 @@ int my_pid;
 int current_index;
 char buffer[500];
 unsigned int start_ns, start_sec, wait_for_ns, wait_for_sec, rand_time;
+int rand_res;
+long double start_ms = 0;
+long double last_ms = 0;
+int rand_inst;
 
 bool check_time_passed();
 
@@ -73,6 +77,7 @@ int main() {
 	sem_wait(SEM_CLOCK_ACC);
 	start_ns = shm_ptr->nanoseconds;
 	start_sec = shm_ptr->seconds;
+	start_ms = shm_ptr->ms;
 	sem_signal(SEM_CLOCK_ACC);
 
 	//initialize the wait for times
@@ -87,7 +92,7 @@ int main() {
 		wait_for_sec++;
 	}
 
-
+	int temp_ms;
 	//main loop
 	while (1) {
 
@@ -97,28 +102,76 @@ int main() {
 				break;
 			}
 		}
+		//if code reaches here then system clock has progressed past the point where it checks to see if it got its resource
+		//and if so it is now able to finish early, grab a new resource or dropo a resource
+
+		if (shm_ptr->sleep_status[current_index] == 1 || shm_ptr->waiting[current_index] == true) {
+			//basically if waiting
+
+			//increment wait time
+			temp_ms = shm_ptr->ms
+			shm_ptr->wait_time[current_index] += temp_ms - last_ms;
+			last_ms = temp_ms;
+
+		}
+		else {
+			//if not waiting
 
 
-		//check to see if the process was granted its resources while it was asleep
-		//IF SO THEN FINISH NORMAL
-		//BREAK
-
-
-		//if process has been running for at least a full second possibly terminate early
-		if (shm_ptr->seconds - start_sec > 1) {
-			if (shm_ptr->nanoseconds > start_ns) {
-				//do like a 15% chance of terminating early or something
-				//FINISH EARLY
-				//BREAK
+			//if process has been running for at least a full second possibly terminate early
+			if (shm_ptr->seconds - start_sec > 1) {
+				if (shm_ptr->nanoseconds > start_ns) {
+					if (rand() % 10 == 1) {
+						//10% chance of terminating early
+						shm_ptr->finished[current_index] = EARLY;
+						break;
+					}
+				}
 			}
+
+			//if doesnt terminate early then pick a resource to either request or drop
+			rand_res = rand() % MAX_RESOURCES;
+
+			sem_wait(SEM_RES_ACC);
+			//IF NOT TERMINATING THEN DETERMINE IF THE PROCESS IS GOING TO REQUEST OR RELEASE A RESOURCES
+			if (shm_ptr->resources[rand_res].allocated[current_index] > 0) {
+				//if resource is already allocated
+				if (rand() % 10 < 5) {
+					//about a 50 percent chance of dropping the resource
+					shm_ptr->resources[rand_res].releases[current_index] = shm_ptr->resources[rand_res].allocated[current_index];
+				}
+			}
+			else {
+				//if resource isnt allocated
+				if (rand() % 10 < 5) {
+					//about a 50 percent chance of requesting that resource
+					if (rand() % 10 < 5) {
+						rand_inst = 1 + (rand() % shm_ptr->resources[rand_res].max[current_index]);
+						if (rand_inst > 0) {
+							shm_ptr->resources[rand_res].requests[current_index] = rand_inst;
+							shm_ptr->waiting[current_index] = true;
+						}
+					}
+
+				}
+			}
+			sem_signal(SEM_RES_ACC);
+
+
+			sem_wait(SEM_CLOCK_ACC);
+
+			//GENERATE WAIT TIME BEFORE NEXT REQUEST/RELEASE
+			rand_time = rand() % 250000000;
+			wait_for_ns = shm_ptr->nanoseconds;
+			wait_for_ns += rand_time;
+			if (wait_for_ns >= 1000000000) {
+				wait_for_ns -= 1000000000;
+				wait_for_sec++;
+			}
+
+			sem_signal(SEM_CLOCK_ACC);
 		}
 
-		//IF NOT TERMINATING THEN DETERMINE IF THE PROCESS IS GOING TO REQUEST OR RELEASE A RESOURCES
-
-		//PUT IN REQUEST OR NOTICE OF RELEASE
-
-
-		//GENERATE WAIT TIME BEFORE NEXT REQUEST/RELEASE
 	}
 
 	return 0;

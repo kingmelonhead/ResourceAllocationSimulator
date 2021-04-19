@@ -56,10 +56,12 @@ typedef struct {
 
 	unsigned int seconds;			//holds the seconds component of the clock
 	unsigned int nanoseconds;		//holds the nanoseconds component of the clock
+	long double ms;
 
-	unsigned int cpu_time[MAX_PROC];
-	unsigned int wait_time[MAX_PROC];
+	long double cpu_time[MAX_PROC];
+	long double wait_time[MAX_PROC];
 	int sleep_status[MAX_PROC];
 	int finished[MAX_PROC];
+	bool waiting[MAX_PROC];
 
 } shm_container;
