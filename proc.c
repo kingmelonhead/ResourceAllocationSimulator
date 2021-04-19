@@ -70,8 +70,10 @@ int main() {
 	shm_ptr->cpu_time[current_index] = 0;
 	shm_ptr->wait_time[current_index] = 0;
 	//snapshot of the clock at the time that the process starts
+	sem_wait(SEM_CLOCK_ACC);
 	start_ns = shm_ptr->nanoseconds;
 	start_sec = shm_ptr->seconds;
+	sem_signal(SEM_CLOCK_ACC);
 
 	//initialize the wait for times
 	wait_for_ns = start_ns;
@@ -96,19 +98,27 @@ int main() {
 			}
 		}
 
+
+		//check to see if the process was granted its resources while it was asleep
+		//IF SO THEN FINISH NORMAL
+		//BREAK
+
+
 		//if process has been running for at least a full second possibly terminate early
 		if (shm_ptr->seconds - start_sec > 1) {
 			if (shm_ptr->nanoseconds > start_ns) {
 				//do like a 15% chance of terminating early or something
+				//FINISH EARLY
+				//BREAK
 			}
 		}
 
-		//IF NOT TERMINATING THEN DETERMINE IF THE PROCESS IS GOING TO REQUEST OR RELEASE A RESOURCE
+		//IF NOT TERMINATING THEN DETERMINE IF THE PROCESS IS GOING TO REQUEST OR RELEASE A RESOURCES
 
-		//DO THAT
+		//PUT IN REQUEST OR NOTICE OF RELEASE
 
 
-		break;
+		//GENERATE WAIT TIME BEFORE NEXT REQUEST/RELEASE
 	}
 
 	return 0;
