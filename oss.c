@@ -7,6 +7,7 @@ FILE* file_ptr;
 shm_container* shm_ptr;
 int proc_count = 0;
 int num_proc = 0;
+char buffer[200];
 
 unsigned long next_fork_sec = 0;
 unsigned long next_fork_nano = 0;
@@ -22,9 +23,12 @@ void check_deadlock();
 bool time_to_fork();
 void normalize_fork();
 void normalize_clock();
-void fork();
+void fork_proc();
 void find_and_remove(int);
 void check_finished();
+void kill_pids();
+void print_pid_table();
+void print_res();
 
 int main() {
 
@@ -46,25 +50,41 @@ int main() {
 		exit(0);
 	}
 
+	//printf("semaphores createed!\n");
+
 	//create the shared memory
 	if (get_shm() == -1) {
 		cleanup();
 		exit(0);
 	}
 
+	//printf("shared memory created!\n");
+
 	initialize_sems();
+
+	//printf("semaphores initialized!\n");
+
 	initialize_shm();
+
+	print_res();
+
+	//printf("shared memory initialized!\n");
+
+	file_ptr = fopen("logfile.log", "a");
+
+	//printf("created the logfile!\n");
 
 	//main loop
 	while (1) {
-
+		//printf("process count %d\n ", num_proc);
 		if (num_proc == 0) {
 			next_fork_nano = rand() % 500000000;
+			fork_proc();
 			//then fork and exec
 		}
 		else if (num_proc < MAX_PROC) {
 			if (time_to_fork()) {
-				//fork and exec
+				fork_proc();
 				//generate new fork time
 				next_fork_nano = shm_ptr->nanoseconds + (rand() % 500000000);
 				normalize_fork();
@@ -83,62 +103,190 @@ int main() {
 
 		sem_wait(SEM_CLOCK_ACC);
 		//INCREMENT LOGICAL CLOCK
-		nano_change = 1 + ( rand() % 10000);
-		shm_ptr->clock_nano += nano_change;
+		nano_change = 1 + ( rand() % 100000000);
+		shm_ptr->nanoseconds += nano_change;
 		shm_ptr->ms += nano_change / 1000000; 
 		normalize_clock();
 		sem_signal(SEM_CLOCK_ACC);
+
+		//sleep(1);
 	
 	}
 
 	return 0;
 }
 
+void kill_pids() {
+	int i;
+
+	for (i = 0; i < MAX_PROC; i++) {
+		if (shm_ptr->pids_running[i] != 0) {
+			kill(shm_ptr->pids_running[i], SIGKILL);
+		}
+	}
+}
+
 bool time_to_fork() {
 	//find if clock has passed the fork time
+
+	//sprintf(buffer, "Next time to fork: %ld sec %ld ns\n", next_fork_sec, next_fork_nano);
+	//log_string(buffer);
+
+	//sprintf(buffer, "Current clock : %d sec %d ns\n", shm_ptr->seconds, shm_ptr->nanoseconds);
+	//log_string(buffer);
+
 	if (next_fork_sec == shm_ptr->seconds) {
 		if (next_fork_nano <= shm_ptr->nanoseconds) {
+			//log_string("time has passed should fork\n");
 			return true;
+			
 		}
 	}
 	else if (next_fork_sec < shm_ptr->seconds) {
+		//log_string("time has passed should fork\n");
 		return true;
 	}
+	//log_string("time has not passed should not fork\n");
 	return false;
 }
 void check_finished() {
+	//printf("checking for finished processes...\n");
+	int i, j;
+	for (i = 0; i < MAX_PROC; i++) {
+		//goes through all processes
+		if (shm_ptr->finished[i] == EARLY) {
+			//here if early termination
+			for (j = 0; j < MAX_RESOURCES; j++) {
+				//goes through all the resources
+				if (shm_ptr->resources[j].allocated[i] > 0) {
+					//here is early terminated process has stuff allocated
 
+					//gives the resources back
+					shm_ptr->resources[j].instances_remaining += shm_ptr->resources[j].allocated[i];
+
+					//initialize the shm location for this process to be used by a later process
+					shm_ptr->resources[j].allocated[i] = 0;
+					shm_ptr->resources[j].requests[i] = 0;
+					shm_ptr->resources[j].releases[i] = 0;
+				}
+			}
+		}
+	}
+	//printf("done checking for finished processes!\n");
 }
 void handle_releases() {
+	//printf("checking for resource release requests...\n");
+	int i, j;
+	for (i = 0; i < MAX_PROC; i++) {
+		//goes through all the processes
 
+		for (j = 0; j < MAX_RESOURCES; j++) {
+			//goes through all resoures
+
+			if (shm_ptr->resources[j].releases[i] > 0) {
+				//here if a process wants to release a resource
+
+				//gives the resources back
+				shm_ptr->resources[j].instances_remaining += shm_ptr->resources[j].allocated[i];
+
+				shm_ptr->waiting[i] = false;
+			}
+		}
+	}
+	//printf("done checking for resource release requests!\n");
 }
 void handle_allocations() {
+	//printf("entering allocation algorithm...\n");
+	int i, j;
+	for (i = 0; i < MAX_PROC; i++) {
+		//goes through all the processes
 
+		if (shm_ptr->sleep_status[i] == 0) {
 
+			for (j = 0; j < MAX_RESOURCES; j++) {
+				//goes through all resoures
+
+				if (shm_ptr->resources[j].requests[i] > 0) {
+					//here if a process wants to obtain a resource
+
+					//sees if there is enough of resource 
+					if (shm_ptr->resources[j].requests[i] <= shm_ptr->resources[j].instances_remaining) {
+						//instances avaliable
+						shm_ptr->resources[j].instances_remaining -= shm_ptr->resources[j].requests[i];
+						shm_ptr->resources[j].allocated[i] = shm_ptr->resources[j].requests[i];
+						shm_ptr->resources[j].requests[i] = 0;
+						shm_ptr->sleep_status[i] = 0;
+						shm_ptr->waiting[i] = false;
+						printf("P%d has recieved access to R%d\n", i, j);
+					}
+					else {
+						//not avaliable
+						printf("P%d is going to sleep. Requested R%d but there is not enough instances\n", i, j);
+						shm_ptr->sleep_status[i] = 1;
+					}
+
+				}
+			}
+		}
+	}
+	//printf("allocation algorithm done!\n");
+}
+
+void print_res() {
+	int i, j;
+	for (i = 0; i < MAX_RESOURCES; i++) {
+		printf("R%d   Instances: %d   Instances Free: %d\n", i, shm_ptr->resources[i].instances, shm_ptr->resources[i].instances_remaining);
+	}
 }
 
 void check_deadlock() {
 
 }
 void cleanup() {
-
+	if (file_ptr != NULL) {
+		fclose(file_ptr);
+	}
+	kill_pids();
+	sleep(1);
+	shmdt(shm_ptr);
+	shmctl(shm_id, IPC_RMID, NULL);
+	semctl(sem_id, 0, IPC_RMID, NULL);
 
 }
 
-void fork() {
+void print_pid_table() {
+	printf("[ ");
+	int i;
+	for (i = 0; i < MAX_PROC; i++) {
+		printf("%d", shm_ptr->pids_running[i]);
+		if (i != (MAX_PROC - 1)) {
+			printf(", ");
+		}
+	}
+	printf("]\n");
+}
+
+void fork_proc() {
+	//printf("forking a process\n");
+	//printf("pid table prior to forking:\n");
+	//print_pid_table();
 	int i;
 	int pid;
 	for (i = 0; i < MAX_PROC; i++) {
 		if (shm_ptr->pids_running[i] == 0) {
+			num_proc++;
 			pid = fork();
+
+			if (pid != 0) {
+				//printf("P%d being forked (PID:%d)\n", i, pid);
+				shm_ptr->pids_running[i] = pid;
+				return;
+			}
+			else {
+				execl("./proc", "./proc", (char*)0);
+			}
 		}
-		if (pid != 0) {
-			shm_ptr->pids_running[i]= pid;
-		}
-		else {
-			execl("./user", "./user", (char*)0);
-		}
-		return;
+
 	}
 }
 
@@ -194,7 +342,7 @@ void initialize_shm() {
 
 void find_and_remove(int pid) {
 	int i, j;
-	for (i = 0 : i < MAX_PROC; i++) {
+	for (i = 0; i < MAX_PROC; i++) {
 		if (shm_ptr->pids_running[i] == pid) {
 			shm_ptr->pids_running[i] = 0;
 			shm_ptr->cpu_time[i] = 0;
@@ -265,8 +413,8 @@ void normalize_clock() {
 	//keeps clock variable from overflowing
 	unsigned long nano = shm_ptr->nanoseconds;
 	if (nano >= 1000000000) {
-		shm_ptr->clock_seconds += 1;
-		shm_ptr->clock_nano -= 1000000000;
+		shm_ptr->seconds += 1;
+		shm_ptr->nanoseconds -= 1000000000;
 	}
 }
 

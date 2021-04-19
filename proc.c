@@ -13,32 +13,26 @@ int rand_res;
 long double start_ms = 0;
 long double last_ms = 0;
 int rand_inst;
+char logname[20];
 
 bool check_time_passed();
 
 
 int main() {
 
+	int resources_used;
+	int temp;
+	int i, x, r, n;
+	int temp_ms;
+
+	my_pid = getpid();
+	srand(my_pid);
+
 	//signal handlers
 	signal(SIGKILL, signal_handler);
 	signal(SIGALRM, signal_handler);
 	signal(SIGINT, signal_handler);
 	signal(SIGSEGV, signal_handler);
-
-	int temp;
-	int i, x, r, n;
-
-	
-
-	int resources_used;
-	my_pid = getpid();
-
-	srand(my_pid);
-
-	//file_ptr = fopen("logfile", "a");
-
-	//gets the current index of the process in the process table based off of its PID
-	current_index = get_index(my_pid);
 
 	//create the shared memory
 	if (get_shm() == -1) {
@@ -52,6 +46,17 @@ int main() {
 		exit(0);
 	}
 
+	//gets the current index of the process in the process table based off of its PID
+	current_index = get_index(my_pid);
+
+
+	sprintf(logname, "log_p%d.log", current_index);
+	file_ptr = fopen(logname, "a");
+
+	log_string("logfile created!\n");
+
+
+
 	//determines what resources will attempt to be acquired and then potentially released after use
 	//as well as the max number of instances of that resource can be got
 	for (i = 0; i < MAX_RESOURCES; i++) {
@@ -61,12 +66,12 @@ int main() {
 			//then if a resource does end up being used then the process comes up with a number of instances 
 			//of that particular resource that it is going to try to get
 			//this number is between 1 and the number of instances of that resource
-			shm_ptr->resources[i].max_resource[current_index] = 1 + (rand() % shm_ptr->resources[i].instances);
+			shm_ptr->resources[i].max[current_index] = 1 + (rand() % shm_ptr->resources[i].instances);
 
-			sprintf(buffer, "Process #%d can claim a max of %d instances of resource %d", current_index, shm_ptr->resources[i].max_resource[current_index], i);
+			//printf("Process #%d can claim a max of %d instances of resource %d", current_index, shm_ptr->resources[i].max[current_index], i);
 
 			//log this info to the logfile (for now it will go to std out)
-			printf(buffer);
+			//printf(buffer);
 		}
 	}
 
@@ -92,7 +97,7 @@ int main() {
 		wait_for_sec++;
 	}
 
-	int temp_ms;
+	log_string("about to enter main loop\n");
 	//main loop
 	while (1) {
 
@@ -109,7 +114,7 @@ int main() {
 			//basically if waiting
 
 			//increment wait time
-			temp_ms = shm_ptr->ms
+			temp_ms = shm_ptr->ms;
 			shm_ptr->wait_time[current_index] += temp_ms - last_ms;
 			last_ms = temp_ms;
 
@@ -123,6 +128,7 @@ int main() {
 				if (shm_ptr->nanoseconds > start_ns) {
 					if (rand() % 10 == 1) {
 						//10% chance of terminating early
+						printf("P%d terminating early\n", current_index);
 						shm_ptr->finished[current_index] = EARLY;
 						break;
 					}
@@ -138,7 +144,9 @@ int main() {
 				//if resource is already allocated
 				if (rand() % 10 < 5) {
 					//about a 50 percent chance of dropping the resource
+					printf("P%d is putting in a request to release R%d \n", current_index, rand_res);
 					shm_ptr->resources[rand_res].releases[current_index] = shm_ptr->resources[rand_res].allocated[current_index];
+					shm_ptr->waiting[current_index] = true;
 				}
 			}
 			else {
@@ -146,8 +154,9 @@ int main() {
 				if (rand() % 10 < 5) {
 					//about a 50 percent chance of requesting that resource
 					if (rand() % 10 < 5) {
-						rand_inst = 1 + (rand() % shm_ptr->resources[rand_res].max[current_index]);
+						rand_inst = 1 + (rand() % shm_ptr->resources[rand_res].instances);
 						if (rand_inst > 0) {
+							printf("P%d is putting in a request to get R%d (%d instances)\n", current_index, rand_res, rand_inst);
 							shm_ptr->resources[rand_res].requests[current_index] = rand_inst;
 							shm_ptr->waiting[current_index] = true;
 						}
@@ -171,16 +180,17 @@ int main() {
 
 			sem_signal(SEM_CLOCK_ACC);
 		}
+		sleep(1);
 
 	}
+
+	sleep(1);
 
 	return 0;
 }
 
 void cleanup() {
-	if (file_ptr != NULL) {
-		fclose(file_ptr);
-	}
+	fclose(file_ptr);
 	shmdt(file_ptr);
 }
 
@@ -237,7 +247,7 @@ void sem_signal(int sem_id) {
 	semop(sem_id, &op, 1);
 }
 
-void get_index(int pid) {
+int get_index(int pid) {
 	int i;
 	for (i = 0; i < MAX_PROC; i++) {
 		if (pid == shm_ptr->pids_running[i]) {
@@ -249,6 +259,7 @@ void get_index(int pid) {
 
 void signal_handler() {
 	cleanup();
+	exit(0);
 }
 
 bool check_time_passed() {

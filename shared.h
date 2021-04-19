@@ -25,12 +25,12 @@
 
 void cleanup();
 void signal_handler();
-void get_shm();
-void get_sem();
+int get_shm();
+int get_sem();
 void log_string(char*);
 void sem_wait(int);
 void sem_signal(int);
-void get_index(int);
+int get_index(int);
 
 typedef struct {
 

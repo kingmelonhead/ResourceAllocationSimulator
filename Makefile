@@ -9,4 +9,4 @@ proc: proc.c shared.h
 	$(CC) -o $@ $^
 
 clean:
-	rm proc oss
+	rm proc oss *.log
