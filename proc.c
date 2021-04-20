@@ -96,7 +96,7 @@ int main() {
 			//if process has been running for at least a full second possibly terminate early
 			if (shm_ptr->seconds - start_sec > 1) {
 				if (shm_ptr->nanoseconds > start_ns) {
-					if (rand() % 10 == 1) {
+					if (rand() % 100 == 12) {
 						//very low chance of terminating early
 						sem_wait(SEM_RES_ACC);
 						shm_ptr->finished[current_index] = EARLY;
