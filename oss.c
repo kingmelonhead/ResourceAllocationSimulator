@@ -106,6 +106,7 @@ int main() {
 			handle_allocations();
 			check_deadlock();
 			detection_run++;
+			print_pid_table();
 			//print_allocation();
 		}
 		sem_signal(SEM_RES_ACC);
@@ -117,7 +118,7 @@ int main() {
 		normalize_clock();
 		sem_signal(SEM_CLOCK_ACC);
 
-		usleep(10000);
+		//usleep(10000);
 	
 	}
 
@@ -217,6 +218,7 @@ void check_finished() {
 			//here if early termination
 			sprintf(buffer, "P%d decided to terminate early at time %d : %d  and will release its resources\n",i, shm_ptr->seconds, shm_ptr->nanoseconds);
 			log_string(buffer);
+			shm_ptr->pids_running[i] = 0;
 			for (j = 0; j < MAX_RESOURCES; j++) {
 				//goes through all the resources
 				if (shm_ptr->resources[j].allocated[i] > 0) {
@@ -225,7 +227,7 @@ void check_finished() {
 					//gives the resources back
 					shm_ptr->resources[j].instances_remaining += shm_ptr->resources[j].allocated[i];
 
-					shm_ptr->pids_running[i] = 0;
+					
 				}
 			}
 			
