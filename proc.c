@@ -101,8 +101,6 @@ int main() {
 						sem_wait(SEM_RES_ACC);
 						shm_ptr->finished[current_index] = EARLY;
 						sem_signal(SEM_RES_ACC);
-						cleanup();
-						exit(0);
 						break;
 					}
 				}
@@ -157,7 +155,6 @@ int main() {
 
 	}
 	cleanup();
-
 	return 0;
 }
 
