@@ -117,7 +117,7 @@ int main() {
 		normalize_clock();
 		sem_signal(SEM_CLOCK_ACC);
 
-		//usleep(500);
+		usleep(10000);
 	
 	}
 
