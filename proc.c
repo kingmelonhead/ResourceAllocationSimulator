@@ -9,18 +9,13 @@ int current_index;
 char buffer[500];
 unsigned int start_ns, start_sec, wait_for_ns, wait_for_sec, rand_time;
 int rand_res;
-long double start_ms = 0;
-long double last_ms = 0;
 int rand_inst;
 
 bool check_time_passed();
 
 int main() {
 
-	int resources_used;
-	int temp;
-	int i, x, r, n;
-	int temp_ms;
+	int resources_used, temp, i;
 
 	my_pid = getpid();
 	srand(my_pid * 12);
@@ -46,20 +41,23 @@ int main() {
 	//gets the current index of the process in the process table based off of its PID
 	current_index = get_index(my_pid);
 
+	//initialize elements in shm that are now for this process
+	shm_ptr->wants[current_index] = -1;
 	shm_ptr->waiting[current_index] = false;
-	shm_ptr->finished[current_index] = 0; 
+	shm_ptr->finished[current_index] = NO; 
 	shm_ptr->sleep_status[current_index] = 0;
 
-	//initialized the cpu and wait times for the process 
-	shm_ptr->cpu_time[current_index] = 0;
-	shm_ptr->wait_time[current_index] = 0;
+	for (i = 0; i < MAX_RESOURCES; i++) {
+		shm_ptr->resources[i].allocated[current_index] = 0;
+		shm_ptr->resources[i].requests[current_index] = 0;
+		shm_ptr->resources[i].releases[current_index] = 0;
+	}
 
 	//snapshot of the clock at the time that the process starts
 	sem_wait(SEM_CLOCK_ACC);
 
 	start_ns = shm_ptr->nanoseconds;
 	start_sec = shm_ptr->seconds;
-	start_ms = shm_ptr->ms;
 
 	sem_signal(SEM_CLOCK_ACC);
 
@@ -76,7 +74,7 @@ int main() {
 	}
 
 	//main loop
-	while (1) {
+	while (shm_ptr->finished[current_index] != KILLED_BY_OSS) {
 
 		//waits for time to pass
 		while (1) {
@@ -94,13 +92,12 @@ int main() {
 		}
 		else {
 			//if not waiting
-
+		
 			//if process has been running for at least a full second possibly terminate early
 			if (shm_ptr->seconds - start_sec > 1) {
 				if (shm_ptr->nanoseconds > start_ns) {
-					if ((rand() % 100) % 10 == 0) {
-						//10% chance of terminating early
-						//printf("P%d terminating early\n", current_index);
+					if (rand() % 10 == 1) {
+						//very low chance of terminating early
 						sem_wait(SEM_RES_ACC);
 						shm_ptr->finished[current_index] = EARLY;
 						sem_signal(SEM_RES_ACC);
@@ -110,6 +107,7 @@ int main() {
 					}
 				}
 			}
+			
 
 			//if doesnt terminate early then pick a resource to either request or drop
 			rand_res = rand() % MAX_RESOURCES;
@@ -158,7 +156,7 @@ int main() {
 		}
 
 	}
-
+	cleanup();
 
 	return 0;
 }
@@ -172,7 +170,7 @@ int get_shm() {
 	key_t key = ftok("Makefile", 'a');
 	//gets chared memory
 	if ((shm_id = shmget(key, (sizeof(resource) * MAX_PROC) + sizeof(shm_container), IPC_EXCL)) == -1) {
-		perror("proc.c: shmget failed:");
+		//perror("proc.c: shmget failed:");
 		return -1;
 	}
 	//tries to attach shared memory
@@ -234,8 +232,10 @@ bool check_time_passed() {
 	if (shm_ptr->seconds > wait_for_sec) {
 		return true;
 	}
-	else if (shm_ptr->nanoseconds > wait_for_ns) {
-		return true;
+	else if (shm_ptr->seconds == wait_for_sec){
+		if (shm_ptr->nanoseconds > wait_for_ns) {
+			return true;
+		}
 	}
 	return false;
 }

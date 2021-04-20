@@ -62,13 +62,11 @@ said to do something would need arguments and on top of that, the wording doesnt
 verbose on and off would be so I just left the program to log everything I felt might be important. Anything unwanted
 can just be ignored I suppsoe. I tried to keep the log as clean and easy on the eyes as possible
 
+I also wasnt 100% sore where all you wanted the resource allocation chart to be printed. It made the most sense to place it at the
+end to function as a final resource allocation snapshot. 
 
-the logfile also got really long and the random number generation started to get wonky just becasue of how close all the srand seeds weere
-to make the log file quicker to navigate i slept the oss thread for some miliseconds each loop of the main loop to slow the execution down a little
+however, printing the resource allocation graph is simple, it can be wedged anywhere in the code with the print_allocation() function
 
 -------------- Issues -------------------------------------
 
-the only issue I was able to find in debugging was that my method of slowing down the execution to make the logfile faster to navigate caused the system to not enter an unsafe state
-during some runs. 
-
-this can be negated by simply re running the executable
+I didnt see any issues on my final build and I tested it many times

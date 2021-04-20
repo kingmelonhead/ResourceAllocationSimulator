@@ -20,7 +20,7 @@
 #define SEM_CLOCK_ACC 1 //semaphore for clock access
 //finish states
 #define NO 0 //not done
-#define NORMAL 1
+#define KILLED_BY_OSS 1
 #define EARLY 2
 
 void cleanup();
@@ -53,10 +53,7 @@ typedef struct {
 
 	unsigned int seconds;			//holds the seconds component of the clock
 	unsigned int nanoseconds;		//holds the nanoseconds component of the clock
-	long double ms;
 
-	long double cpu_time[MAX_PROC];
-	long double wait_time[MAX_PROC];
 	int sleep_status[MAX_PROC];
 	int finished[MAX_PROC];
 	bool waiting[MAX_PROC];
