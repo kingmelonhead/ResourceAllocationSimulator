@@ -107,7 +107,7 @@ int main() {
 			handle_allocations();
 			check_deadlock();
 			detection_run++;
-			print_pid_table();
+			//print_pid_table();
 			//print_allocation();
 		}
 		sem_signal(SEM_RES_ACC);
