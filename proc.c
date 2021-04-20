@@ -89,11 +89,7 @@ int main() {
 
 		if (shm_ptr->sleep_status[current_index] == 1 || shm_ptr->waiting[current_index] == true) {
 			//basically if waiting
-
-			//increment wait time
-			temp_ms = shm_ptr->ms;
-			shm_ptr->wait_time[current_index] += temp_ms - last_ms;
-			last_ms = temp_ms;
+			//do nothing and skip main body of loop
 
 		}
 		else {

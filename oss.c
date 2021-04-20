@@ -11,6 +11,13 @@ char buffer[200];
 int line_count = 0;
 int fork_count = 0;
 
+//stats
+int immediately = 0;
+int after_waiting = 0;
+int killed_by_deadlock = 0;
+int detection_run = 0;
+
+
 unsigned long next_fork_sec = 0;
 unsigned long next_fork_nano = 0;
 
@@ -31,6 +38,8 @@ void check_finished();
 void kill_pids();
 void print_pid_table();
 void print_res();
+void report();
+void print_allocation();
 
 int main() {
 
@@ -48,6 +57,7 @@ int main() {
 
 	//open logfile
 	file_ptr = fopen("logfile.log", "a");
+	log_string("DEBUG STUFF:\n\n");
 	log_string("created the logfile!\n");
 
 	//create the semaphores
@@ -70,12 +80,13 @@ int main() {
 	initialize_shm();
 	log_string("shared memory initialized!\n");
 
+	log_string("\nResources in their initialized state:\n\n");
 	print_res();
 
 	alarm(5);
-	log_string("alarm for 5 real clock seconds has been set\n");
+	log_string("\nalarm for 5 real clock seconds has been set\n");
 
-	log_string("Logical clock and main oss.c loop starting..\n\n");
+	log_string("\nLogical clock and main oss.c loop starting..\n\n");
 	//main loop
 	while (1) {
 
@@ -88,6 +99,7 @@ int main() {
 			if (time_to_fork()) {
 				fork_proc();
 				//generate new fork time
+				log_string("generating next fork time\n");
 				next_fork_nano = shm_ptr->nanoseconds + (rand() % 500000000);
 				normalize_fork();
 			}
@@ -99,6 +111,8 @@ int main() {
 			handle_releases();
 			handle_allocations();
 			check_deadlock();
+			detection_run++;
+			print_allocation();
 		}
 		sem_signal(SEM_RES_ACC);
 
@@ -116,6 +130,43 @@ int main() {
 
 	return 0;
 }
+
+void print_allocation() {
+	fputs("\n\nResource allocation chart\n\n", file_ptr);
+	int i, j;
+	fputs("    P0  P1  P2  P3  P4  P5  P6  P7  P8  P9  P10  P11  P12  P13  P14  P15  P16  P17  P18  P19\n", file_ptr);
+	for (i = 0; i < MAX_RESOURCES; i++) {
+		sprintf(buffer, "R%d   ", i);
+		fputs(buffer, file_ptr);
+		for (j = 0; j < MAX_PROC; j++) {
+			sprintf(buffer, "%d    ", shm_ptr->resources[i].allocated[j]);
+			fputs(buffer, file_ptr);
+		}
+		fputs("\n", file_ptr);
+	}
+	
+}
+
+void report() {
+	double temp;
+	sprintf(buffer, "\n\nREPORT:\n\n");
+	fputs(buffer, file_ptr);
+	sprintf(buffer, "Instantly granted resources: %d times\n", immediately);
+	fputs(buffer, file_ptr);
+	sprintf(buffer, "Processes were granted resources after waiting %d times\n", after_waiting);
+	fputs(buffer, file_ptr);
+	sprintf(buffer, "Deadlock detection ran %d times\n", detection_run);
+	fputs(buffer, file_ptr);
+	sprintf(buffer, "%d processes were killed by deadlock\n", killed_by_deadlock);
+	fputs(buffer, file_ptr);
+	temp = (double)killed_by_deadlock / (double)detection_run;
+	temp *= 100;
+	sprintf(buffer, "%.2f percent of time deadlock detection was run, deadlock was detected and a process had to be killed\n", temp);
+	fputs(buffer, file_ptr);
+	fputs("0 percent indicates that there was never deadlock in the system (it was never in an unsafe state)\n", file_ptr);
+
+}
+
 void log_string(char* s) {
 	line_count++;
 	if (line_count <= 10000) {
@@ -237,13 +288,14 @@ void handle_allocations() {
 						shm_ptr->resources[j].requests[i] = 0;
 						shm_ptr->sleep_status[i] = 0;
 						shm_ptr->waiting[i] = false;
+						immediately++;
 						sprintf(buffer, "P%d has recieved access to R%d Time %d : %d\n", i, j, shm_ptr->seconds, shm_ptr->nanoseconds);
 						log_string(buffer);
 					}
 					else {
 
 						//not avaliable
-						sprintf(buffer, "P%d is going to sleep. Requested R%d but there is not enough instances\n", i, j);
+						sprintf(buffer, "P%d is going to sleep at time %d : %d . Process requested R%d but there is not enough instances\n", i, j, shm_ptr->seconds, shm_ptr->nanoseconds);
 						log_string(buffer);
 						shm_ptr->wants[i] = j;
 						shm_ptr->sleep_status[i] = 1;
@@ -273,6 +325,7 @@ void check_deadlock() {
 			res = shm_ptr->wants[i];
 			while (1) {
 				for (j = 0; j < MAX_PROC; j++) {
+					
 					//goes through processes looking for sleeping processes that are holding the resource that the process wants
 					//the processes are asleep and likely wont release the needed resorce for a long time if ever
 					//so in this situation the processes are just killed
@@ -284,6 +337,7 @@ void check_deadlock() {
 							//trouble process found
 							sprintf(buffer, "Deadlock Detected: P%d is being killed to free R%d for P%d\n", j, res, i);
 							log_string(buffer);
+							killed_by_deadlock++;
 							//put resources back into the pool
 							shm_ptr->resources[res].instances_remaining += shm_ptr->resources[res].allocated[j];
 
@@ -307,6 +361,7 @@ void check_deadlock() {
 
 								sprintf(buffer, "P%d has been granted access to R%d at time %d : %d \n", i, res, shm_ptr->seconds, shm_ptr->nanoseconds);
 								log_string(buffer);
+								after_waiting++;
 
 								//un sleep and un wait the process
 								shm_ptr->sleep_status[i] = 0;
@@ -323,7 +378,8 @@ void check_deadlock() {
 
 }
 void cleanup() {
-	log_string("Unless specified otherwise, OSS ending due to reaching 5 real clock seconds\n");
+	log_string("\n\nUnless specified otherwise, OSS ending due to reaching 5 real clock seconds\n");
+	report();
 	if (file_ptr != NULL) {
 		fclose(file_ptr);
 	}
@@ -367,7 +423,8 @@ void fork_proc() {
 			pid = fork();
 
 			if (pid != 0) {
-				//printf("P%d being forked (PID:%d)\n", i, pid);
+				sprintf(buffer, "P%d being forked (PID:%d) at time %d : %d \n", i, pid, shm_ptr->seconds, shm_ptr->nanoseconds);
+				log_string(buffer);
 				shm_ptr->pids_running[i] = pid;
 				return;
 			}
