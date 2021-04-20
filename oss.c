@@ -87,19 +87,20 @@ int main() {
 	//main loop
 	while (1) {
 
+		sem_wait(SEM_RES_ACC);
+
 		if (num_proc == 0) {
-			next_fork_nano = rand() % 500000000;
+			//if no processes then fork
 			fork_proc();
-			//then fork and exec
 		}
 		else if (num_proc < MAX_PROC) {
+			//if there is room in process table
 			if (time_to_fork()) {
+				//if enough time has passed then fork
 				fork_proc();
-
 			}
 		}
 
-		sem_wait(SEM_RES_ACC);
 		if (num_proc > 0) {
 			check_finished();
 			handle_releases();
@@ -364,7 +365,7 @@ void check_deadlock() {
 								//un sleep and un wait the process
 								shm_ptr->sleep_status[i] = 0;
 								shm_ptr->waiting[i] = false;
-								break;
+								return;
 							}
 						}
 					}
