@@ -35,16 +35,13 @@ int get_index(int);
 typedef struct {
 
 	bool shared;					//flag for stating if the resource is a shared resource or not
-	bool taken;
 
 	int instances;					//number of instances of a given resource
 	int instances_remaining;		//number of instances of a given resource that are still able to be allocated
 	
-	
 	int requests[MAX_PROC];			//array that holds the # of the resource being requested [index would be the process #]
 	int allocated[MAX_PROC];		//array that holds the # of resources allocated to process [index would be the process #]
 	int releases[MAX_PROC];			//array that holds the # of the resource being released [index would be the process #]
-	int max[MAX_PROC];		//array that holds the # of resources of that type that can be claimed
 
 } resource;
 
@@ -63,5 +60,6 @@ typedef struct {
 	int sleep_status[MAX_PROC];
 	int finished[MAX_PROC];
 	bool waiting[MAX_PROC];
+	int wants[MAX_PROC];
 
 } shm_container;

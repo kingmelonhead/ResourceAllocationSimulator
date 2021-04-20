@@ -8,6 +8,8 @@ shm_container* shm_ptr;
 int proc_count = 0;
 int num_proc = 0;
 char buffer[200];
+int line_count = 0;
+int fork_count = 0;
 
 unsigned long next_fork_sec = 0;
 unsigned long next_fork_nano = 0;
@@ -44,39 +46,39 @@ int main() {
 	sa.sa_handler = child_handler;
 	sigaction(SIGCHLD, &sa, NULL);
 
+	//open logfile
+	file_ptr = fopen("logfile.log", "a");
+	log_string("created the logfile!\n");
+
 	//create the semaphores
 	if (get_sem() == -1) {
 		cleanup();
 		exit(0);
 	}
-
-	//printf("semaphores createed!\n");
+	log_string("semaphores createed!\n");
 
 	//create the shared memory
 	if (get_shm() == -1) {
 		cleanup();
 		exit(0);
 	}
-
-	//printf("shared memory created!\n");
+	log_string("shared memory created!\n");
 
 	initialize_sems();
-
-	//printf("semaphores initialized!\n");
+	log_string("semaphores initialized!\n");
 
 	initialize_shm();
+	log_string("shared memory initialized!\n");
 
 	print_res();
 
-	//printf("shared memory initialized!\n");
+	alarm(5);
+	log_string("alarm for 5 real clock seconds has been set\n");
 
-	file_ptr = fopen("logfile.log", "a");
-
-	//printf("created the logfile!\n");
-
+	log_string("Logical clock and main oss.c loop starting..\n\n");
 	//main loop
 	while (1) {
-		//printf("process count %d\n ", num_proc);
+
 		if (num_proc == 0) {
 			next_fork_nano = rand() % 500000000;
 			fork_proc();
@@ -92,14 +94,13 @@ int main() {
 		}
 
 		sem_wait(SEM_RES_ACC);
-
-		check_finished();
-		handle_releases();
-		handle_allocations();
-		check_deadlock();
-
+		if (num_proc > 0) {
+			check_finished();
+			handle_releases();
+			handle_allocations();
+			check_deadlock();
+		}
 		sem_signal(SEM_RES_ACC);
-
 
 		sem_wait(SEM_CLOCK_ACC);
 		//INCREMENT LOGICAL CLOCK
@@ -109,16 +110,30 @@ int main() {
 		normalize_clock();
 		sem_signal(SEM_CLOCK_ACC);
 
-		//sleep(1);
+		usleep(100000);
 	
 	}
 
 	return 0;
 }
+void log_string(char* s) {
+	line_count++;
+	if (line_count <= 10000) {
+		//log the passed string to the log file
+		fputs(s, file_ptr);
+	}
+	else {
+		printf("exiting because line count got over 10,000\n");
+		fputs("OSS is terminating: 10,000 lines in logfile met\n\n", file_ptr);
+		cleanup();
+		sleep(1);
+		exit(0);
+	}
+
+}
 
 void kill_pids() {
 	int i;
-
 	for (i = 0; i < MAX_PROC; i++) {
 		if (shm_ptr->pids_running[i] != 0) {
 			kill(shm_ptr->pids_running[i], SIGKILL);
@@ -128,27 +143,19 @@ void kill_pids() {
 
 bool time_to_fork() {
 	//find if clock has passed the fork time
-
-	//sprintf(buffer, "Next time to fork: %ld sec %ld ns\n", next_fork_sec, next_fork_nano);
-	//log_string(buffer);
-
-	//sprintf(buffer, "Current clock : %d sec %d ns\n", shm_ptr->seconds, shm_ptr->nanoseconds);
-	//log_string(buffer);
-
 	if (next_fork_sec == shm_ptr->seconds) {
 		if (next_fork_nano <= shm_ptr->nanoseconds) {
-			//log_string("time has passed should fork\n");
+			//passed time
 			return true;
-			
 		}
-	}
-	else if (next_fork_sec < shm_ptr->seconds) {
-		//log_string("time has passed should fork\n");
+	} else if (next_fork_sec < shm_ptr->seconds) {
+		//passed time
 		return true;
 	}
-	//log_string("time has not passed should not fork\n");
+	//not passed time
 	return false;
 }
+
 void check_finished() {
 	//printf("checking for finished processes...\n");
 	int i, j;
@@ -156,11 +163,13 @@ void check_finished() {
 		//goes through all processes
 		if (shm_ptr->finished[i] == EARLY) {
 			//here if early termination
+			sprintf(buffer, "P%d decided to terminate early at time %d : %d  and will release its resources\n",i, shm_ptr->seconds, shm_ptr->nanoseconds);
+			log_string(buffer);
 			for (j = 0; j < MAX_RESOURCES; j++) {
 				//goes through all the resources
 				if (shm_ptr->resources[j].allocated[i] > 0) {
 					//here is early terminated process has stuff allocated
-
+				
 					//gives the resources back
 					shm_ptr->resources[j].instances_remaining += shm_ptr->resources[j].allocated[i];
 
@@ -168,8 +177,12 @@ void check_finished() {
 					shm_ptr->resources[j].allocated[i] = 0;
 					shm_ptr->resources[j].requests[i] = 0;
 					shm_ptr->resources[j].releases[i] = 0;
+
+					//clear PID from pid table 
+					shm_ptr->pids_running[i] = 0;
 				}
 			}
+			
 		}
 	}
 	//printf("done checking for finished processes!\n");
@@ -184,11 +197,14 @@ void handle_releases() {
 			//goes through all resoures
 
 			if (shm_ptr->resources[j].releases[i] > 0) {
+
 				//here if a process wants to release a resource
+				sprintf(buffer, "P%d has released R%d at time %d : %d \n", i, j, shm_ptr->seconds, shm_ptr->nanoseconds);
+				log_string(buffer);
 
 				//gives the resources back
 				shm_ptr->resources[j].instances_remaining += shm_ptr->resources[j].allocated[i];
-
+				shm_ptr->resources[j].releases[i] = 0;
 				shm_ptr->waiting[i] = false;
 			}
 		}
@@ -207,21 +223,29 @@ void handle_allocations() {
 				//goes through all resoures
 
 				if (shm_ptr->resources[j].requests[i] > 0) {
+
 					//here if a process wants to obtain a resource
+					sprintf(buffer, "P%d wants access to R%d (instances: %d) \n", i, j, shm_ptr->resources[j].requests[i]);
+					log_string(buffer);
 
 					//sees if there is enough of resource 
 					if (shm_ptr->resources[j].requests[i] <= shm_ptr->resources[j].instances_remaining) {
+
 						//instances avaliable
 						shm_ptr->resources[j].instances_remaining -= shm_ptr->resources[j].requests[i];
 						shm_ptr->resources[j].allocated[i] = shm_ptr->resources[j].requests[i];
 						shm_ptr->resources[j].requests[i] = 0;
 						shm_ptr->sleep_status[i] = 0;
 						shm_ptr->waiting[i] = false;
-						printf("P%d has recieved access to R%d\n", i, j);
+						sprintf(buffer, "P%d has recieved access to R%d Time %d : %d\n", i, j, shm_ptr->seconds, shm_ptr->nanoseconds);
+						log_string(buffer);
 					}
 					else {
+
 						//not avaliable
-						printf("P%d is going to sleep. Requested R%d but there is not enough instances\n", i, j);
+						sprintf(buffer, "P%d is going to sleep. Requested R%d but there is not enough instances\n", i, j);
+						log_string(buffer);
+						shm_ptr->wants[i] = j;
 						shm_ptr->sleep_status[i] = 1;
 					}
 
@@ -235,14 +259,71 @@ void handle_allocations() {
 void print_res() {
 	int i, j;
 	for (i = 0; i < MAX_RESOURCES; i++) {
-		printf("R%d   Instances: %d   Instances Free: %d\n", i, shm_ptr->resources[i].instances, shm_ptr->resources[i].instances_remaining);
+		sprintf(buffer, "R%d   Instances: %d   Instances Free: %d\n", i, shm_ptr->resources[i].instances, shm_ptr->resources[i].instances_remaining);
+		log_string(buffer);
 	}
 }
 
 void check_deadlock() {
+	int i, j;
+	int res;
+	for (i = 0; i < MAX_PROC; i++) {
+		if (shm_ptr->sleep_status[i] == 1) {
+			//if here then an asleep process was found
+			res = shm_ptr->wants[i];
+			while (1) {
+				for (j = 0; j < MAX_PROC; j++) {
+					//goes through processes looking for sleeping processes that are holding the resource that the process wants
+					//the processes are asleep and likely wont release the needed resorce for a long time if ever
+					//so in this situation the processes are just killed
+					if (j != i) {
+						//keeps process from killing itself or trying to anyway
+
+						if (shm_ptr->resources[res].allocated[j] > 0 && shm_ptr->sleep_status[j] == 1) {
+
+							//trouble process found
+							sprintf(buffer, "Deadlock Detected: P%d is being killed to free R%d for P%d\n", j, res, i);
+							log_string(buffer);
+							//put resources back into the pool
+							shm_ptr->resources[res].instances_remaining += shm_ptr->resources[res].allocated[j];
+
+							//initialize process stats
+							shm_ptr->resources[res].releases[j] = 0;
+							shm_ptr->resources[res].requests[j] = 0;
+							shm_ptr->resources[res].allocated[j] = 0;
+
+							//actually kill the process hogging resource
+							kill(shm_ptr->pids_running[j], SIGKILL);
+
+							//clear process from pid table
+							shm_ptr->pids_running[j] = 0;
+
+							//see if the stalled process can now claim resource
+							if (shm_ptr->resources[res].requests[i] <= shm_ptr->resources[res].instances_remaining) {
+								//grant resource	
+								shm_ptr->resources[res].instances_remaining -= shm_ptr->resources[res].requests[i];
+								shm_ptr->resources[res].allocated[i] += shm_ptr->resources[res].requests[i];
+								shm_ptr->resources[res].requests[i] = 0;
+
+								sprintf(buffer, "P%d has been granted access to R%d at time %d : %d \n", i, res, shm_ptr->seconds, shm_ptr->nanoseconds);
+								log_string(buffer);
+
+								//un sleep and un wait the process
+								shm_ptr->sleep_status[i] = 0;
+								shm_ptr->waiting[i] = false;
+								break;
+							}
+						}
+					}
+				}
+				break;
+			}
+		}
+	}
 
 }
 void cleanup() {
+	log_string("Unless specified otherwise, OSS ending due to reaching 5 real clock seconds\n");
 	if (file_ptr != NULL) {
 		fclose(file_ptr);
 	}
@@ -267,6 +348,14 @@ void print_pid_table() {
 }
 
 void fork_proc() {
+	fork_count++;
+	if (fork_count >= 40) {
+		printf("exiting becasue 40 chilren have been forked!\n");
+		log_string("OSS exiting becasuse 40 children have been forked\n");
+		cleanup();
+		sleep(1);
+		exit(0);
+	}
 	//printf("forking a process\n");
 	//printf("pid table prior to forking:\n");
 	//print_pid_table();
@@ -298,33 +387,40 @@ void signal_handler() {
 void child_handler(int sig) {
 	pid_t pid;
 	while ((pid = waitpid((pid_t)(-1), 0, WNOHANG)) > 0) {
-
+		//doesnt really do anything
+		//just prevents zombies
 	}
 
 }
 
 void initialize_sems() {
+	//initializes the 2 semaphores i use 
 	semctl(sem_id, SEM_RES_ACC, SETVAL, 1);
 	semctl(sem_id, SEM_CLOCK_ACC, SETVAL, 1);
 }
 
 void initialize_shm() {
+	//initializes the shm container
 	int i, j;
 	for (i = 0; i < MAX_RESOURCES; i++) {
 		if ((i + 1) % 10 == 0) {
 			shm_ptr->resources[i].shared = true;
+			sprintf(buffer, "R%d created as a sharable resource\n", i);
+			log_string(buffer);
 		}
 		else {
 			shm_ptr->resources[i].shared = false;
+			sprintf(buffer, "R%d created as a non sharable resource\n", i);
+			log_string(buffer);
 		}
-		shm_ptr->resources[i].taken = false;
 		shm_ptr->resources[i].instances = 1 + (rand() % MAX_INSTANCES);
 		shm_ptr->resources[i].instances_remaining = shm_ptr->resources[i].instances;
+		sprintf(buffer, "%d instances created for R%d\n", shm_ptr->resources[i].instances, i);
+		log_string(buffer);
 		for (j = 0; j < MAX_PROC; j++) {
 			shm_ptr->resources[i].requests[j] = 0;
 			shm_ptr->resources[i].allocated[j] = 0;
 			shm_ptr->resources[i].releases[j] = 0;
-			shm_ptr->resources[i].max[j] = 0;
 		}
 	}
 	for (i = 0; i < MAX_PROC; i++) {
@@ -334,6 +430,7 @@ void initialize_shm() {
 		shm_ptr->sleep_status[i] = 0;
 		shm_ptr->finished[i] = 0;
 		shm_ptr->waiting[i] = false;
+		shm_ptr->wants[i] = -1;
 	}
 	shm_ptr->seconds = 0;
 	shm_ptr->nanoseconds = 0;
@@ -386,10 +483,6 @@ int get_sem() {
 	return 0;
 }
 
-void log_string(char* s) {
-	//log the passed string to the log file
-	fputs(s, file_ptr);
-}
 
 void sem_wait(int sem_id) {
 	//used to wait and decrement semaphore

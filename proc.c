@@ -3,7 +3,6 @@
 //globals
 int shm_id;
 int sem_id;
-FILE* file_ptr;
 shm_container* shm_ptr;
 int my_pid; 
 int current_index;
@@ -13,10 +12,8 @@ int rand_res;
 long double start_ms = 0;
 long double last_ms = 0;
 int rand_inst;
-char logname[20];
 
 bool check_time_passed();
-
 
 int main() {
 
@@ -26,7 +23,7 @@ int main() {
 	int temp_ms;
 
 	my_pid = getpid();
-	srand(my_pid);
+	srand(my_pid * 12);
 
 	//signal handlers
 	signal(SIGKILL, signal_handler);
@@ -49,40 +46,21 @@ int main() {
 	//gets the current index of the process in the process table based off of its PID
 	current_index = get_index(my_pid);
 
-
-	sprintf(logname, "log_p%d.log", current_index);
-	file_ptr = fopen(logname, "a");
-
-	log_string("logfile created!\n");
-
-
-
-	//determines what resources will attempt to be acquired and then potentially released after use
-	//as well as the max number of instances of that resource can be got
-	for (i = 0; i < MAX_RESOURCES; i++) {
-		temp = rand() % 12;
-		if (temp % 3 == 0) { // should produce about a 25% chance of resource being used
-
-			//then if a resource does end up being used then the process comes up with a number of instances 
-			//of that particular resource that it is going to try to get
-			//this number is between 1 and the number of instances of that resource
-			shm_ptr->resources[i].max[current_index] = 1 + (rand() % shm_ptr->resources[i].instances);
-
-			//printf("Process #%d can claim a max of %d instances of resource %d", current_index, shm_ptr->resources[i].max[current_index], i);
-
-			//log this info to the logfile (for now it will go to std out)
-			//printf(buffer);
-		}
-	}
+	shm_ptr->waiting[current_index] = false;
+	shm_ptr->finished[current_index] = 0; 
+	shm_ptr->sleep_status[current_index] = 0;
 
 	//initialized the cpu and wait times for the process 
 	shm_ptr->cpu_time[current_index] = 0;
 	shm_ptr->wait_time[current_index] = 0;
+
 	//snapshot of the clock at the time that the process starts
 	sem_wait(SEM_CLOCK_ACC);
+
 	start_ns = shm_ptr->nanoseconds;
 	start_sec = shm_ptr->seconds;
 	start_ms = shm_ptr->ms;
+
 	sem_signal(SEM_CLOCK_ACC);
 
 	//initialize the wait for times
@@ -97,7 +75,6 @@ int main() {
 		wait_for_sec++;
 	}
 
-	log_string("about to enter main loop\n");
 	//main loop
 	while (1) {
 
@@ -122,14 +99,17 @@ int main() {
 		else {
 			//if not waiting
 
-
 			//if process has been running for at least a full second possibly terminate early
 			if (shm_ptr->seconds - start_sec > 1) {
 				if (shm_ptr->nanoseconds > start_ns) {
-					if (rand() % 10 == 1) {
+					if ((rand() % 100) % 10 == 0) {
 						//10% chance of terminating early
-						printf("P%d terminating early\n", current_index);
+						//printf("P%d terminating early\n", current_index);
+						sem_wait(SEM_RES_ACC);
 						shm_ptr->finished[current_index] = EARLY;
+						sem_signal(SEM_RES_ACC);
+						cleanup();
+						exit(0);
 						break;
 					}
 				}
@@ -144,7 +124,7 @@ int main() {
 				//if resource is already allocated
 				if (rand() % 10 < 5) {
 					//about a 50 percent chance of dropping the resource
-					printf("P%d is putting in a request to release R%d \n", current_index, rand_res);
+					//printf("P%d is putting in a request to release R%d \n", current_index, rand_res);
 					shm_ptr->resources[rand_res].releases[current_index] = shm_ptr->resources[rand_res].allocated[current_index];
 					shm_ptr->waiting[current_index] = true;
 				}
@@ -156,7 +136,7 @@ int main() {
 					if (rand() % 10 < 5) {
 						rand_inst = 1 + (rand() % shm_ptr->resources[rand_res].instances);
 						if (rand_inst > 0) {
-							printf("P%d is putting in a request to get R%d (%d instances)\n", current_index, rand_res, rand_inst);
+							//printf("P%d is putting in a request to get R%d (%d instances)\n", current_index, rand_res, rand_inst);
 							shm_ptr->resources[rand_res].requests[current_index] = rand_inst;
 							shm_ptr->waiting[current_index] = true;
 						}
@@ -180,18 +160,15 @@ int main() {
 
 			sem_signal(SEM_CLOCK_ACC);
 		}
-		sleep(1);
 
 	}
 
-	sleep(1);
 
 	return 0;
 }
 
 void cleanup() {
-	fclose(file_ptr);
-	shmdt(file_ptr);
+	shmdt(shm_ptr);
 }
 
 int get_shm() {
@@ -222,11 +199,6 @@ int get_sem() {
 		return -1;
 	}
 	return 0;
-}
-
-void log_string(char* s) {
-	//log the passed string to the log file
-	fputs(s, file_ptr);
 }
 
 void sem_wait(int sem_id) {
